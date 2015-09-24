@@ -28,8 +28,7 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
       val nVertices = 5
       val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
 
-      val hitsGraph = starGraph.staticHITS(numIter = 1)
-      hitsGraph.vertices.foreach(println)
+      val hitsGraph = starGraph.staticHITS(numIter = 3)
       assert(0 == 0)
     }
   } // end of test HITS 
