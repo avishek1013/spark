@@ -25,10 +25,14 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
 
   test("HITS") {
     withSpark { sc =>
-      val nVertices = 5
+      val nVertices = 10
       val starGraph = GraphGenerators.starGraph(sc, nVertices).cache()
+      val randGraph = GraphGenerators.rmatGraph(sc, nVertices, 50)
 
-      val hitsGraph = starGraph.staticHITS(numIter = 3)
+      val starHitsGraph = starGraph.staticHITS(numIter = 3)
+      val randHitsGraph = randGraph.staticHITS(numIter = 3)
+      starHitsGraph.vertices.foreach(println)
+
       assert(0 == 0)
     }
   } // end of test HITS 

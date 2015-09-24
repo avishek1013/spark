@@ -17,8 +17,10 @@
 
 package org.apache.spark.graphx.lib
 
-import scala.reflect.ClassTag
 import scala.language.postfixOps
+import scala.math.sqrt
+import scala.reflect.ClassTag
+
 
 import org.apache.spark.Logging
 import org.apache.spark.graphx._
@@ -46,29 +48,24 @@ object HITS extends Logging {
   def run[VD: ClassTag, ED: ClassTag](
     graph: Graph[VD, ED], numIter: Int): Graph[(Double, Double), ED] =
   {
-    graph.triplets.foreach(println)
-    println
     // Initialize hub and authority score of all vertices in hitsGraph to 1.0
     var hitsGraph = graph.mapVertices( (id, attr) => (1.0, 1.0) )
-    hitsGraph.vertices.foreach(println)
-    println
 
     var iteration = 0
     while (iteration < numIter) {
-      // Peform authority update rule
-      val newAuths = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToDst(ctx.srcAttr._1), _ + _)
-      
-      hitsGraph = hitsGraph.joinVertices(newAuths) {(_, oldScores, newAuth) => (oldScores._1, newAuth)}
-      
-      println(authNorm)
-      hitsGraph.vertices.foreach(println)
-      println
+      // Perform authority update rule
+      val newAuths = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToDst(ctx.srcAttr._1), _+_)
+      val authNorm = sqrt(newAuths.map(elem => elem._2*elem._2).reduce((a,b) => a+b))
+      hitsGraph = hitsGraph.joinVertices(newAuths) {
+        (_, oldScores, newAuth) => (oldScores._1, newAuth/authNorm)
+      }
       
       // Perform hub update rule
-      val newHubs = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToSrc(ctx.dstAttr._2), _ + _)
-      hitsGraph = hitsGraph.joinVertices(newHubs) {(_, oldScores, newHub) => (newHub, oldScores._2)}
-      hitsGraph.vertices.foreach(println)
-      println
+      val newHubs = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToSrc(ctx.dstAttr._2), _+_)
+      val hubNorm = sqrt(newHubs.map(elem => elem._2*elem._2).reduce((a, b) => a + b))
+      hitsGraph = hitsGraph.joinVertices(newHubs) {
+        (_, oldScores, newHub) => (newHub/hubNorm, oldScores._2)
+      }
 
       iteration += 1
     }
