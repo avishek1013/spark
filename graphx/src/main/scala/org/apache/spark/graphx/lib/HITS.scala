@@ -26,11 +26,12 @@ import org.apache.spark.Logging
 import org.apache.spark.graphx._
 
 /**
- * HTIS algorithm implementation.
- *
+ * HITS algorithm implementation. The algorithm calculates a hub and authority score for each
+ * vertex in a graph by iteratively updating the authority value for all vertices and then
+ * updating the hub value for all vertices. This is repeated until a set number of iterations
+ * have been passed.
  */
 object HITS extends Logging {
-
 
    /**
    * Run the HITS algorithm for a fixed number of iterations returning a graph
@@ -43,24 +44,31 @@ object HITS extends Logging {
    * @param numIter the number of iterations of HITS to run
    *
    * @return the graph containing vertices with their corresponding hub and authority
-   * scores as a vertex attribute (hub,auth) and edges with the same initial edge attribute
+   *         scores as a vertex attribute (hub,auth) and edges with the same initial edge 
+   *         attribute
    */
   def run[VD: ClassTag, ED: ClassTag](
     graph: Graph[VD, ED], numIter: Int): Graph[(Double, Double), ED] =
   {
-    // Initialize hub and authority score of all vertices in hitsGraph to 1.0
-    var hitsGraph = graph.mapVertices( (id, attr) => (1.0, 1.0) )
+    // Initialize hub and authority score of all vertices
+    var hitsGraph = graph.mapVertices( (vid, attr) => (1.0, 0.0) ).cache()
 
+    // Repeat numIter times
     var iteration = 0
     while (iteration < numIter) {
-      // Perform authority update rule
+      // Perform authority update rule and normalize
       val newAuths = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToDst(ctx.srcAttr._1), _+_)
-      val authNorm = sqrt(newAuths.map(elem => elem._2*elem._2).reduce((a,b) => a+b))
+      val authNorm = sqrt(newAuths.map( elem => elem._2*elem._2 ).reduce( (a,b) => a+b ))
       hitsGraph = hitsGraph.joinVertices(newAuths) {
         (_, oldScores, newAuth) => (oldScores._1, newAuth/authNorm)
       }
       
-      // Perform hub update rule
+      // For the first pass, we need to reset the hub values of all vertices
+      if (iteration == 0) {
+        hitsGraph = hitsGraph.mapVertices( (vid, attr) => (0.0, attr._2) )
+      }
+
+      // Perform hub update rule and normalize
       val newHubs = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToSrc(ctx.dstAttr._2), _+_)
       val hubNorm = sqrt(newHubs.map(elem => elem._2*elem._2).reduce((a, b) => a + b))
       hitsGraph = hitsGraph.joinVertices(newHubs) {
