@@ -33,7 +33,7 @@ import org.apache.spark.graphx._
  */
 object HITS extends Logging {
 
-   /**
+  /**
    * Run the HITS algorithm for a fixed number of iterations returning a graph
    * with vertex attributes containing the hub and authority scores
    *
@@ -44,7 +44,7 @@ object HITS extends Logging {
    * @param numIter the number of iterations of HITS to run
    *
    * @return the graph containing vertices with their corresponding hub and authority
-   *         scores as a vertex attribute (hub,auth) and edges with the same initial edge 
+   *         scores as a vertex attribute (hub, auth) and edges with the same initial edge 
    *         attribute
    */
   def run[VD: ClassTag, ED: ClassTag](
@@ -56,11 +56,13 @@ object HITS extends Logging {
     // Repeat numIter times
     var iteration = 0
     while (iteration < numIter) {
+
       // Perform authority update rule and normalize
-      val newAuths = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToDst(ctx.srcAttr._1), _+_)
-      val authNorm = sqrt(newAuths.map( elem => elem._2*elem._2 ).reduce( (a,b) => a+b ))
+      val newAuths = hitsGraph.aggregateMessages[Double](
+        ctx => ctx.sendToDst(ctx.srcAttr._1), _ + _, TripletFields.Src)
+      val authNorm = sqrt(newAuths.map( elem => elem._2 * elem._2 ).sum())
       hitsGraph = hitsGraph.joinVertices(newAuths) {
-        (_, oldScores, newAuth) => (oldScores._1, newAuth/authNorm)
+        (_, oldScores, newAuth) => (oldScores._1, newAuth / authNorm)
       }
       
       // For the first pass, we need to reset the hub values of all vertices
@@ -69,10 +71,11 @@ object HITS extends Logging {
       }
 
       // Perform hub update rule and normalize
-      val newHubs = hitsGraph.aggregateMessages[Double](ctx => ctx.sendToSrc(ctx.dstAttr._2), _+_)
-      val hubNorm = sqrt(newHubs.map(elem => elem._2*elem._2).reduce((a, b) => a + b))
+      val newHubs = hitsGraph.aggregateMessages[Double](
+        ctx => ctx.sendToSrc(ctx.dstAttr._2), _ + _, TripletFields.Dst)
+      val hubNorm = sqrt(newHubs.map(elem => elem._2 * elem._2).sum())
       hitsGraph = hitsGraph.joinVertices(newHubs) {
-        (_, oldScores, newHub) => (newHub/hubNorm, oldScores._2)
+        (_, oldScores, newHub) => (newHub / hubNorm, oldScores._2)
       }
 
       iteration += 1

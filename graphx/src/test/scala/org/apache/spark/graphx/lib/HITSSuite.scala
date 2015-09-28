@@ -26,27 +26,28 @@ import org.apache.spark.graphx.util.GraphGenerators
 
 object StarHITS {
   def apply(nVertices: Int): Seq[(VertexId, (Double, Double))] = {
-    var hubAuth = Array.fill(nVertices){ (1.0/sqrt(nVertices - 1.0), 0.0) }
+    var hubAuth = Array.fill(nVertices){ (1.0 / sqrt(nVertices - 1.0), 0.0) }
     hubAuth(0) = (0.0, 1.0)
-    (0L until (nVertices)).zip(hubAuth)
+    (0L until nVertices).zip(hubAuth)
   }
 }
 
 object ChainHITS {
   def apply(nVertices: Int): Seq[(VertexId, (Double, Double))] = {
-    val score = 1.0/sqrt(nVertices - 1.0)
-    var hubAuth = Array.fill(nVertices){ (score, score)  }
+    val score = 1.0 / sqrt(nVertices - 1.0)
+    var hubAuth = Array.fill(nVertices){ (score, score) }
     hubAuth(0) = (score, 0.0)
     hubAuth(nVertices - 1) = (0.0, score)
-    (0L until (nVertices)).zip(hubAuth)
+    (0L until nVertices).zip(hubAuth)
   }
 }
 
 class HITSSuite extends SparkFunSuite with LocalSparkContext {
   
   def compareScores(a: VertexRDD[(Double, Double)], b: VertexRDD[(Double, Double)]): Double = {
-    a.innerZipJoin(b) { case (vid, a, b) => (a._1-b._1)*(a._1-b._1) + (a._2-b._2)*(a._2-b._2) }
-      .map{ case (id, error) => error }.sum()
+    a.innerZipJoin(b) { 
+      case (vid, a, b) => (a._1 - b._1) * (a._1 - b._1) + (a._2 - b._2) * (a._2 - b._2) 
+    }.map { case (id, error) => error }.sum()
   }
 
   test("Star HITS") {
@@ -64,8 +65,8 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
       }.map { case (vid, test) => test }.sum()
       assert(notMatching === 0)
 
-      // On a star graph, center vertex should have a (hub, auth) score of (0.0,1.0)
-      // while all other vertices should have (1.0/sqrt(nVertices-1.0),0.0)
+      // On a star graph, center vertex should have a (hub, auth) score of (0.0, 1.0)
+      // while all other vertices should have (1.0 / sqrt(nVertices - 1.0), 0.0)
       val referenceScores = VertexRDD( sc.parallelize(StarHITS(nVertices)) )
       assert(compareScores(staticScores2, referenceScores) < errorTol)
     }
@@ -82,7 +83,7 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
 
       // On a chain graph, the first vertex should have an auth score of 0.0 and the last 
       // vertex should have a hub score of 0.0. All other hub/auth scores should be 
-      // 1.0/sqrt(nVertices-1.0)
+      // 1.0 / sqrt(nVertices - 1.0)
       val staticScores = chain.staticHITS(numIter).vertices
       val referenceScores = VertexRDD( sc.parallelize(ChainHITS(nVertices)) )
       assert(compareScores(staticScores, referenceScores) < errorTol)
