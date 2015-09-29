@@ -34,8 +34,15 @@ import org.apache.spark.graphx._
 object HITS extends Logging {
 
   /**
-   * Run the HITS algorithm for a fixed number of iterations returning a graph
-   * with vertex attributes containing the hub and authority scores
+   * Run the HITS algorithm for a fixed number of iterations, returning a graph
+   * with vertex attributes containing the hub and authority scores. The hub and authority
+   * scores range from 0.0 to 1.0. A hub score of 0.0 indicates that the vertex is not a hub
+   * (has no outgoing edges) and a score of 1.0 indicates that the vertex is the only hub (all 
+   * edges in the graph begin at the vertex). An authority score of 0.0 indicates that the 
+   * vertex is not an authority (has no incoming edges) and a score of 1.0 indicates that the 
+   * vertex is the only authority (all edges in the graph end at the vertex).
+   *
+   * The algorithm functions roughly as follows:
    *
    * @tparam VD the original vertex attribute (not used)
    * @tparam ED the original edge attribute (not used)
@@ -66,6 +73,8 @@ object HITS extends Logging {
       }
       
       // For the first pass, we need to reset the hub values of all vertices
+      // This ensures that vertices that do not point to other vertices are properly given
+      // a hub score of 0.0
       if (iteration == 0) {
         hitsGraph = hitsGraph.mapVertices( (vid, attr) => (0.0, attr._2) )
       }

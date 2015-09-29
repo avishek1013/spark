@@ -19,6 +19,7 @@ package org.apache.spark.graphx.lib
 
 import scala.math.sqrt
 
+import org.apache.spark.rdd.EmptyRDD
 import org.apache.spark.SparkFunSuite
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.GraphGenerators
@@ -57,7 +58,7 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
       val errorTol = 1.0e-5
 
       val staticScores1 = starGraph.staticHITS(numIter = 1).vertices
-      val staticScores2 = starGraph.staticHITS(numIter = 5).vertices
+      val staticScores2 = starGraph.staticHITS(numIter = 2).vertices
 
       // On a star graph, HITS should converge after one iteration
       val notMatching = staticScores1.innerZipJoin(staticScores2) { (vid, pr1, pr2) =>
@@ -89,4 +90,15 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
       assert(compareScores(staticScores, referenceScores) < errorTol)
     }
   } // end of test Chain HITS
+
+  test("Single Vertex HITS") {
+    withSpark { sc =>
+      // A graph with one vertex and no edges should have a (hub, auth) score of (0.0, 0.0)
+      // and converges after one iteration
+      val singleVert = Graph(sc.parallelize(Array((0L, Unit))), new EmptyRDD[Edge[Unit]](sc))
+      val staticScores = singleVert.staticHITS(1).vertices
+      val notMatching = if (staticScores.first()._2 != (0.0, 0.0)) 1 else 0
+      assert(notMatching === 0)
+    }
+  } // end of test Single Vertex HITS
 }
