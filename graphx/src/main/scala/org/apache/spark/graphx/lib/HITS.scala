@@ -21,7 +21,6 @@ import scala.language.postfixOps
 import scala.math.sqrt
 import scala.reflect.ClassTag
 
-
 import org.apache.spark.Logging
 import org.apache.spark.graphx._
 
@@ -38,7 +37,7 @@ import org.apache.spark.graphx._
  * // Initialize hub and authority scores
  * for each vertex v in graph do
  *   v.hub = 1.0
- *   v.auth = 0.0
+ *   v.auth = 1.0
  * 
  * // Loop numIter times
  * iter = 0
@@ -95,34 +94,56 @@ object HITS extends Logging {
   def run[VD: ClassTag, ED: ClassTag](
     graph: Graph[VD, ED], numIter: Int): Graph[(Double, Double), Unit] =
   {
-    // Initialize hub and authority score of all vertices
+    // Initialize hub and authority score of all vertices and other variables
     var hitsGraph = graph.mapVertices( (vid, attr) => (1.0, 0.0) ).cache()
+    var prevHitsGraph: Graph[(Double, Double), ED] = null
+    var prevHubs: VertexRDD[Double] = null
 
     // Repeat numIter times
     var iteration = 0
     while (iteration < numIter) {
 
-      // Perform authority update rule and normalize
+      // Calculate new authority scores and normalization constant
       val newAuths = hitsGraph.aggregateMessages[Double](
-        ctx => ctx.sendToDst(ctx.srcAttr._1), _ + _, TripletFields.Src)
+        ctx => ctx.sendToDst(ctx.srcAttr._1), _ + _, TripletFields.Src).cache()
       val authNorm = sqrt(newAuths.map( elem => elem._2 * elem._2 ).sum())
+
+      // We only begin to unpersist these objects after one iteration of the algorithm since 
+      // these objects do not exist yet. We can safely unpersist them because the
+      // aggregateMessages function materializes the new hitsGraph
+      if (iteration != 0) {
+        prevHitsGraph.unpersist(false)
+        prevHubs.unpersist(false)
+      }
+
+      // Store old hitsGraph and create new hitsGraph with updated auth scores
+      prevHitsGraph = hitsGraph
       hitsGraph = hitsGraph.joinVertices(newAuths) {
         (_, oldScores, newAuth) => (oldScores._1, newAuth / authNorm)
-      }
-      
+      }.cache()
+     
       // For the first pass, we need to reset the hub values of all vertices. This ensures that 
       // vertices that do not point to other vertices are properly given a hub score of 0.0
       if (iteration == 0) {
-        hitsGraph = hitsGraph.mapVertices( (vid, attr) => (0.0, attr._2) )
+        hitsGraph = hitsGraph.mapVertices( (vid, attr) => (0.0, attr._2) ).cache()
       }
 
-      // Perform hub update rule and normalize
+      // Calculate new hub scores and normalization constant
       val newHubs = hitsGraph.aggregateMessages[Double](
-        ctx => ctx.sendToSrc(ctx.dstAttr._2), _ + _, TripletFields.Dst)
+        ctx => ctx.sendToSrc(ctx.dstAttr._2), _ + _, TripletFields.Dst).cache()
       val hubNorm = sqrt(newHubs.map(elem => elem._2 * elem._2).sum())
+
+      // Store newHubs to unpersist in the next iteration. We can safely unpersist prevHitsGraph
+      // and newAuths since the aggregateMessages function materializes hitsGraph
+      prevHubs = newHubs
+      prevHitsGraph.unpersist(false)
+      newAuths.unpersist(false)
+
+      // Store old hitsGraph and create new hitsGraph with updated hub scores
+      prevHitsGraph = hitsGraph
       hitsGraph = hitsGraph.joinVertices(newHubs) {
         (_, oldScores, newHub) => (newHub / hubNorm, oldScores._2)
-      }
+      }.cache()
 
       iteration += 1
     }

@@ -19,8 +19,8 @@ package org.apache.spark.graphx.lib
 
 import scala.math.sqrt
 
-import org.apache.spark.rdd.EmptyRDD
 import org.apache.spark.SparkFunSuite
+import org.apache.spark.rdd.EmptyRDD
 import org.apache.spark.graphx._
 import org.apache.spark.graphx.util.GraphGenerators
 
@@ -40,6 +40,57 @@ object ChainHITS {
     hubAuth(0) = (score, 0.0)
     hubAuth(nVertices - 1) = (0.0, score)
     (0L until nVertices).zip(hubAuth)
+  }
+}
+
+object GridHITS {
+  def apply(nRows: Int, nCols: Int, nIter: Int): Seq[(VertexId, (Double, Double))] = {
+    // Arrays to containing incoming and outgoing neighbors
+    val inNbrs = Array.fill(nRows * nCols)(collection.mutable.MutableList.empty[Int])
+    val outNbrs = Array.fill(nRows * nCols)(collection.mutable.MutableList.empty[Int])
+    
+    // Convert row column address into vertex ids (row major order)
+    def sub2ind(r: Int, c: Int): Int = r * nCols + c
+    
+    // Make the grid graph
+    for (r <- 0 until nRows; c <- 0 until nCols) {
+      val ind = sub2ind(r, c)
+      if (r + 1 < nRows) {
+        inNbrs(sub2ind(r + 1, c)) += ind
+        outNbrs(ind) += sub2ind(r + 1, c)
+      }
+      if (c + 1 < nCols) {
+        inNbrs(sub2ind(r, c + 1)) += ind
+        outNbrs(ind) += sub2ind(r, c + 1)
+      }
+    }
+
+    // Initialize hub and authority scores
+    var hubScores: Array[Double] = Array.fill(nRows * nCols)(1.0)
+    var authScores: Array[Double] = Array.fill(nRows * nCols)(1.0)
+    
+    // Run nIter times
+    for (iter <- 0 until nIter) {
+      // Update authority score and normalize
+      var authNorm = 0.0
+      for (ind <- 0 until (nRows * nCols)) {
+        authScores(ind) = 0.0
+        authScores(ind) += inNbrs(ind).map( nbr => hubScores(nbr) ).sum
+        authNorm += authScores(ind) * authScores(ind) 
+      }
+      authScores = authScores.map( num => num / sqrt(authNorm) )
+
+      // Update hub scores and normalize
+      var hubNorm = 0.0
+      for (ind <- 0 until (nRows * nCols)) {
+        hubScores(ind) = 0.0
+        hubScores(ind) += outNbrs(ind).map( nbr => authScores(nbr) ).sum
+        hubNorm += hubScores(ind) * hubScores(ind)
+      }
+      hubScores = hubScores.map( num => num / sqrt(hubNorm) )
+    }
+
+    (0L until (nRows * nCols)).zip(hubScores.zip(authScores))
   }
 }
 
@@ -90,6 +141,23 @@ class HITSSuite extends SparkFunSuite with LocalSparkContext {
       assert(compareScores(staticScores, referenceScores) < errorTol)
     }
   } // end of test Chain HITS
+
+  test("Grid HITS") {
+    withSpark { sc =>
+      val nRows = 100
+      val nCols = 120
+      val numIter = 10
+      val errorTol = 1.0e-5
+
+      // Generate grid graph, compute HITS, and produce reference hub and authority scores 
+      val gridGraph = GraphGenerators.gridGraph(sc, nRows, nCols)
+      val staticScores = gridGraph.staticHITS(numIter).vertices
+      val referenceScores = VertexRDD( sc.parallelize(GridHITS(nRows, nCols, numIter)) )
+
+      // Check to make sure that staticHITS returns similar values to our reference
+      assert(compareScores(staticScores, referenceScores) < errorTol)
+    }
+  } // end of test Grid HITS
 
   test("Single Vertex HITS") {
     withSpark { sc =>
