@@ -409,14 +409,14 @@ class GraphOps[VD: ClassTag, ED: ClassTag](graph: Graph[VD, ED]) extends Seriali
 
   /**
    * Run the HITS algorithm for a fixed number of iterations, returning a graph with vertex 
-   * attributes containing the hub and authority scores for each vertex and the same edge 
-   * attributes as those given as input. 
+   * attributes containing the hub and authority scores for each vertex and edge attributes as
+   * Unit.
    *
    * @see [[org.apache.spark.graphx.lib.HITS$#run]]
    */
-   def staticHITS(numIter: Int): Graph[(Double, Double), ED] = {
+  def staticHITS(numIter: Int): Graph[(Double, Double), Unit] = {
     HITS.run(graph, numIter)
-   }
+  }
 
   /**
    * Compute the connected component membership of each vertex and return a graph with the vertex
